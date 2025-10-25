@@ -1,7 +1,7 @@
 # Discord GitHub Issue Tracker Bot
 
 A Discord bot that monitors GitHub repositories and sends notifications about new issues with specific labels to designated channels.
-
+invite to your server here: https://top.gg/bot/1431393106523197530?s=0303d9e440046
 ## Features
 
 - Watch GitHub repositories for new issues
