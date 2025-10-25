@@ -62,10 +62,6 @@ Edit `config.py` to modify:
 2. Create a feature branch
 3. Submit a pull request
 
-## License
-
-MIT License
-
 ## Support
 
 Create an issue in the repository for support requests.
