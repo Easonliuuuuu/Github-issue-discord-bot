@@ -9,7 +9,8 @@ load_dotenv(BASE_DIR / ".env")
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 
-CHECK_INTERVAL_MINUTES = 10
+CHECK_INTERVAL_MINUTES = 15
+
 
 DATA_FILE_PATH = os.environ.get("DATA_FILE_PATH", "bot_data.json")
 
@@ -25,4 +26,5 @@ def get_github_headers():
     else:
         print("Warning: No GitHub Token provided. You will be rate-limited (60 req/hr).")
     return headers
+
 

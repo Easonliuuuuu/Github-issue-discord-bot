@@ -21,20 +21,20 @@ def load_data():
                         first_key = next(iter(raw_watched_repos))
                         first_val = raw_watched_repos[first_key]
                     except StopIteration:
-                        first_val = None # Handle empty dict
+                        first_val = None  # Handle empty dict
 
-                    if isinstance(first_val, int): # Old format: "repo": channel_id
+                    if isinstance(first_val, int):  # Old format: "repo": channel_id
                         print("Old data format detected. Migrating...")
                         for repo, channel_id in raw_watched_repos.items():
                             migrated_watched_repos[repo] = {
                                 "channel_id": channel_id,
-                                "labels": ["good first issue"] # Default old label
+                                "labels": ["good first issue"]  # Default old label
                             }
                         watched_repos = migrated_watched_repos
                         print("Migration complete. Saving new format.")
                         # Save immediately after migration
                         save_data(watched_repos, notified_issues) 
-                    else: # Assume new format
+                    else:  # Assume new format
                         watched_repos = raw_watched_repos
                 
                 # Load as a set for efficient lookups
