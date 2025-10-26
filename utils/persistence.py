@@ -12,34 +12,44 @@ def load_data():
             with open(DATA_FILE_PATH, 'r') as f:
                 data = json.load(f)
                 
-                # Check for old data format and migrate
                 raw_watched_repos = data.get('watched_repos', {})
                 migrated_watched_repos = {}
+                data_was_migrated = False
+
                 if raw_watched_repos:
-                    # Check the format of the first item to guess schema
                     try:
                         first_key = next(iter(raw_watched_repos))
                         first_val = raw_watched_repos[first_key]
                     except StopIteration:
-                        first_val = None  # Handle empty dict
+                        first_val = None  
 
-                    if isinstance(first_val, int):  # Old format: "repo": channel_id
-                        print("Old data format detected. Migrating...")
+                    if isinstance(first_val, int):  
+                        print("Old data format detected (v1). Migrating...")
                         for repo, channel_id in raw_watched_repos.items():
                             migrated_watched_repos[repo] = {
                                 "channel_id": channel_id,
-                                "labels": ["good first issue"]  # Default old label
+                                "labels": ["good first issue"],  
+                                "watch_type": "issues" 
                             }
                         watched_repos = migrated_watched_repos
-                        print("Migration complete. Saving new format.")
-                        # Save immediately after migration
-                        save_data(watched_repos, notified_issues) 
-                    else:  # Assume new format
+                        data_was_migrated = True
+                        print("Migration v1 complete.")
+                        
+                    else:  
                         watched_repos = raw_watched_repos
+                        for repo, repo_data in watched_repos.items():
+                            if "watch_type" not in repo_data:
+                                repo_data["watch_type"] = "issues" 
+                                data_was_migrated = True
+                        if data_was_migrated:
+                             print("Migrated v2 data to include 'watch_type: issues' default.")
                 
-                # Load as a set for efficient lookups
                 notified_issues = set(data.get('notified_issues', []))
             print(f"Loaded data from {DATA_FILE_PATH}")
+            
+            if data_was_migrated:
+                save_data(watched_repos, notified_issues)
+
         except Exception as e:
             print(f"Error reading or migrating {DATA_FILE_PATH}: {e}. Starting with empty data.")
             watched_repos = {}
@@ -55,11 +65,10 @@ def save_data(watched_repos, notified_issues):
         with open(DATA_FILE_PATH, 'w') as f:
             data = {
                 'watched_repos': watched_repos,
-                'notified_issues': list(notified_issues)  # Convert set to list for JSON
+                'notified_issues': list(notified_issues)  
             }
             json.dump(data, f, indent=4)
         print(f"Saved data to {DATA_FILE_PATH}")
     except IOError as e:
         print(f"Error saving data: {e}")
-
 
