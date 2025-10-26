@@ -2,7 +2,7 @@
 
 A Discord bot that monitors GitHub repositories and sends notifications about new issues and pull requests with specific labels to designated channels.
 
-[Invatation Link](https://discord.com/oauth2/authorize?client_id=1431393106523197530&permissions=19456&integration_type=0&scope=bot)
+[Invitation Link](https://discord.com/oauth2/authorize?client_id=1431393106523197530&permissions=19456&integration_type=0&scope=bot)
 
 ## Features
 
