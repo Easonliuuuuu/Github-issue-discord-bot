@@ -19,14 +19,38 @@ class GitHubCog(commands.Cog):
 
 
     @commands.command(name='watch', 
-                      help='Watch a repo for specific labels, or all new issues.\nUsage: `!watch owner/repo "label one" "label two"`\nTo watch all issues: `!watch owner/repo`')
-    async def watch_repo(self, ctx, repo_name: str, *labels: str):
+                      help='Watch a repo for issues, pull requests, or both.\n'
+                           'Usage: `!watch owner/repo [labels...] [--type <type>]`\n'
+                           'Types: `issues` (default), `prs`, `all`\n'
+                           'Example: `!watch owner/repo "help wanted" --type all`\n'
+                           'Example: `!watch owner/repo --type prs`')
+    async def watch_repo(self, ctx, repo_name: str, *args: str):
         """Adds a repository to the watch list for the current channel."""
         repo_name = repo_name.strip()
         
         if '/' not in repo_name or len(repo_name.split('/')) != 2:
             await ctx.send(f":x: Invalid format. Please use `owner/repo` (e.g., `!watch microsoft/vscode`)")
             return
+
+        labels = []
+        watch_type = "issues" 
+        possible_types = ["issues", "prs", "all"]
+        
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg.lower() == "--type":
+                if i + 1 < len(args) and args[i+1].lower() in possible_types:
+                    watch_type = args[i+1].lower()
+                    i += 2 # Skip both --type and its value
+                    continue
+                else:
+                    await ctx.send(f":x: Invalid value for `--type`. Must be `issues`, `prs`, or `all`.")
+                    return
+            else:
+                labels.append(arg)
+                i += 1
+        
 
         loading_msg = await ctx.send(f":mag: Verifying repository `{repo_name}`...")
 
@@ -49,7 +73,7 @@ class GitHubCog(commands.Cog):
                 repo_label_names = set()
                 page = 1
 
-                # Handle pagination: fetch all labels for the repo
+                
                 while True:
                     params = {"page": page, "per_page": 100}
                     async with self.bot.http_session.get(repo_labels_url, params=params) as response:
@@ -76,7 +100,6 @@ class GitHubCog(commands.Cog):
                     if user_label.lower() not in repo_label_names:
                         invalid_labels.append(f"`{user_label}`")
                     else:
-                        # Store the original casing for future use
                         valid_labels.append(user_label) 
 
                 if invalid_labels:
@@ -85,29 +108,35 @@ class GitHubCog(commands.Cog):
                     return
                 
                 if not valid_labels:
-                    await loading_msg.edit(content=f":x: Error: No valid labels were provided, but you specified some.")
-                    return
+                    if labels:
+                        await loading_msg.edit(content=f":x: Error: No valid labels were provided, but you specified some.")
+                        return
             
-            
-
+            #All checks passed, save the data
             channel_id = ctx.channel.id
-            
             start_time_iso = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
             
             self.bot.watched_repos[repo_name] = {
                 "channel_id": channel_id,
                 "labels": valid_labels, 
-                "watch_since_time": start_time_iso
+                "watch_since_time": start_time_iso,
+                "watch_type": watch_type
             }
             
             save_data(self.bot.watched_repos, self.bot.notified_issues)
             
-            # --- MODIFIED SUCCESS MESSAGE ---
+            
+            type_str = {
+                "issues": "issues",
+                "prs": "pull requests",
+                "all": "issues and pull requests"
+            }[watch_type]
+
             if valid_labels:
                 label_str = ", ".join([f"`{l}`" for l in valid_labels])
-                await loading_msg.edit(content=f":white_check_mark: Now watching `{repo_name}` for labels: {label_str}. \nNotifications will be sent to this channel.")
+                await loading_msg.edit(content=f":white_check_mark: Now watching `{repo_name}` for new **{type_str}** with labels: {label_str}. \nNotifications will be sent to this channel.")
             else:
-                await loading_msg.edit(content=f":white_check_mark: Now watching `{repo_name}` for **all new issues**. \nNotifications will be sent to this channel.")
+                await loading_msg.edit(content=f":white_check_mark: Now watching `{repo_name}` for **all new {type_str}**. \nNotifications will be sent to this channel.")
 
         except aiohttp.ClientError as e:
             print(f"Network error during repo verification: {e}")
@@ -169,14 +198,13 @@ class GitHubCog(commands.Cog):
                 count += 1
                 channel_id = data['channel_id']
                 labels = data['labels']
+                watch_type = data.get("watch_type", "issues") # Default to issues
                 channel_name = f"<#{channel_id}>"
                 
-                # --- MODIFIED LABEL STRING ---
                 if labels:
                     label_str = ", ".join([f"`{l}`" for l in labels])
                 else:
-                    label_str = "**All new issues**"
-                # --- END MODIFIED ---
+                    label_str = "**All**"
                 
                 # Try to get a formatted time string
                 time_str = " (Time not set)"
@@ -186,24 +214,31 @@ class GitHubCog(commands.Cog):
                         # Format as relative time for Discord <t:TIMESTAMP:R>
                         time_str = f" (since <t:{int(time_dt.timestamp())}:R>)"
                     except:
-                        pass # Keep default time_str
+                        pass 
+                
+                type_str = {
+                    "issues": "Issues Only",
+                    "prs": "PRs Only",
+                    "all": "Issues & PRs"
+                }[watch_type]
 
-                description += f"**`{repo}`**{time_str}\n<:arrow_right:1234567890> Channel: {channel_name}\n<:arrow_right:1234567890> Labels: {label_str}\n\n"
+                description += (f"**`{repo}`**{time_str}\n"
+                              f"• Channel: {channel_name}\n"
+                              f"• Type: **{type_str}**\n"
+                              f"• Labels: {label_str}\n\n")
         
         if count == 0:
             await ctx.send("I am not watching any repositories in this server.")
             return
 
-        # Replace the placeholder emoji with a real one (or remove)
-        embed.description = description.replace("<:arrow_right:1234567890>", "•")
+        embed.description = description
         await ctx.send(embed=embed)
 
-    # --- BACKGROUND TASK ---
-
+    
     @tasks.loop(minutes=CHECK_INTERVAL_MINUTES)
     async def check_issues_loop(self):
         """The main background loop that checks GitHub for new issues."""
-        # Record the time *before* we start the check
+        
         current_run_time_utc = datetime.now(timezone.utc)
         print(f"[{datetime.now()}] Running GitHub check...")
         
@@ -211,34 +246,25 @@ class GitHubCog(commands.Cog):
             print("No repos to watch. Skipping check.")
             return
 
-        # Base parameters: get issues sorted by last update, newest first
         base_params = {"state": "open", "sort": "updated", "direction": "desc"}
         
         current_notified_issues = set(self.bot.notified_issues)
         repos_to_remove = []
-        
-        # Flag to see if we need to save data (because we updated a since_time)
         data_was_modified = False
 
         for repo, data in list(self.bot.watched_repos.items()):
             channel_id = data['channel_id']
             labels = data['labels']
+            watch_type = data.get("watch_type", "issues") 
             
-            
-            # --- MODIFIED ---
-            # Create a copy of the base params
             params = base_params.copy()
             
-            # Only add the 'labels' parameter if we are watching for specific labels
             if labels:
                 params["labels"] = ",".join(labels)
-            # --- END MODIFIED ---
             
-            # Get the *per-repo* start time
             repo_since_time = data.get('watch_since_time')
             
             if repo_since_time:
-                # Use a 1-second buffer to avoid race conditions
                 try:
                     since_dt = datetime.fromisoformat(repo_since_time.replace('Z', '+00:00'))
                     since_dt_buffered = since_dt - timedelta(seconds=1)
@@ -248,84 +274,82 @@ class GitHubCog(commands.Cog):
                     # Fallback: Don't use 'since' this time if format is bad
             else:
                 # This is an old entry from before we tracked time.
-                # We'll fetch all, and `notified_issues` will prevent spam.
-                # We will set the time for next run below.
                 print(f"  - No 'watch_since_time' for {repo}. Fetching all and setting time for next run.")
                 data_was_modified = True # Mark to save the new time
-            # -----------------
             
             url = f"https://api.github.com/repos/{repo}/issues"
             
-            # --- MODIFIED LOGGING ---
+            
+            type_log_str = {
+                "issues": "issues only",
+                "prs": "PRs only",
+                "all": "issues and PRs"
+            }[watch_type]
             if labels:
-                print(f"  - Checking {repo} for labels: {params['labels']}")
+                print(f"  - Checking {repo} for {type_log_str} with labels: {params['labels']}")
             else:
-                print(f"  - Checking {repo} for **all new issues**")
-            # --- END MODIFIED ---
+                print(f"  - Checking {repo} for all new {type_log_str}")
+            
                 
             if 'since' in params:
-                print(f"  - Checking for issues updated since: {params['since']}")
+                print(f"  - Checking for items updated since: {params['since']}")
             
             try:
-                # Use the new `params`
                 async with self.bot.http_session.get(url, params=params) as response:
                     
                     if response.status == 200:
-                        issues = await response.json()
-                        if not issues:
-                            print(f"  - No matching issues found for {repo}.")
+                        items = await response.json() 
+                        if not items:
+                            print(f"  - No matching items found for {repo}.")
                             continue
                         
-                        print(f"  - Found {len(issues)} matching issues for {repo}.")
+                        print(f"  - Found {len(items)} matching items for {repo}.")
                         
-                        for issue in issues:
-                            issue_id = f"{repo}#{issue['number']}"
+                        for item in items: 
                             
-                            # We also need to check if the issue was *created* after the watch time
-                            # The 'since' param is for 'updated', so an old issue just getting a
-                            # new label would appear. We only want *new* issues.
+                            is_pr = 'pull_request' in item
+
+                            if watch_type == "issues" and is_pr:
+                                print(f"    - Ignoring Pull Request (watching issues only): {repo}#{item['number']}")
+                                continue
+                            elif watch_type == "prs" and not is_pr:
+                                print(f"    - Ignoring Issue (watching PRs only): {repo}#{item['number']}")
+                                continue
+
+                            issue_id = f"{repo}#{item['number']}"
+                            issue_created_at = datetime.fromisoformat(item['created_at'].replace('Z', '+00:00'))
                             
-                            issue_created_at = datetime.fromisoformat(issue['created_at'].replace('Z', '+00:00'))
-                            
-                            # --- MODIFIED WATCH_STARTED_AT LOGIC ---
-                            # It's possible repo_since_time is None if it's an old entry
-                            # In that case, we can't compare, so we just use the notified_issues set
                             watch_started_at = None
                             if repo_since_time:
                                 try:
                                     watch_started_at = datetime.fromisoformat(repo_since_time.replace('Z', '+00:00'))
                                 except ValueError:
-                                    pass # watch_started_at remains None
+                                    pass 
                             
-                            # Check if issue is new
                             passes_newness_check = issue_id not in self.bot.notified_issues
                             
-                            # Check if issue was created *after* we started watching
-                            # If we don't have a start time, we'll just rely on the newness_check
-                            passes_time_check = True # Default to true
+                            passes_time_check = True 
                             if watch_started_at:
                                 passes_time_check = (issue_created_at >= watch_started_at)
                             else:
                                 print(f"    - No watch_started_at for {issue_id}, relying on notified_issues set.")
 
                             if passes_newness_check and passes_time_check:
-                            # --- END MODIFIED ---
-                                print(f"    - NEW Issue Found: {issue_id}")
+                                print(f"    - NEW Item Found: {issue_id} (Type: {'PR' if is_pr else 'Issue'})")
                                 current_notified_issues.add(issue_id)
                                 
                                 channel = self.bot.get_channel(channel_id)
                                 if channel:
-                                    await self.send_notification(channel, repo, issue, labels)
+                                    await self.send_notification(channel, repo, item, labels, is_pr)
                                 else:
                                     print(f"    - Error: Channel {channel_id} not found for repo {repo}.")
                             elif issue_id in self.bot.notified_issues:
-                                print(f"    - Ignoring already notified issue: {issue_id}")
+                                print(f"    - Ignoring already notified item: {issue_id}")
                             else:
-                                # This else now catches issues that failed the time check
                                 if watch_started_at:
-                                    print(f"    - Ignoring old issue: {issue_id} (created {issue_created_at}, watching since {watch_started_at})")
+                                    print(f"    - Ignoring old item: {issue_id} (created {issue_created_at}, watching since {watch_started_at})")
                                 else:
-                                    print(f"    - Ignoring old issue: {issue_id} (created {issue_created_at}, no watch time set)")
+                                    print(f"    - Ignoring old item: {issue_id} (created {issue_created_at}, no watch time set)")
 
                     
                     elif response.status == 404:
@@ -341,17 +365,17 @@ class GitHubCog(commands.Cog):
             except aiohttp.ClientError as e:
                 print(f"  - Error: Network or client error checking {repo}: {e}")
             
+            # Update this repo's check time to the time this loop *started*.
             if self.bot.watched_repos.get(repo): # Check if it wasn't deleted
                 self.bot.watched_repos[repo]['watch_since_time'] = current_run_time_utc.isoformat().replace('+00:00', 'Z')
                 data_was_modified = True
-            # --- END NEW ---
             
             await asyncio.sleep(2) 
 
         for repo in repos_to_remove:
             if repo in self.bot.watched_repos:
                 del self.bot.watched_repos[repo]
-                data_was_modified = True # We changed the data
+                data_was_modified = True 
                 
         self.bot.notified_issues.update(current_notified_issues)
         
@@ -362,25 +386,33 @@ class GitHubCog(commands.Cog):
         print("GitHub check finished.")
 
 
-    async def send_notification(self, channel, repo, issue, watched_labels):
+    async def send_notification(self, channel, repo, issue, watched_labels, is_pr):
         """Formats and sends a single issue notification to a channel."""
         
+        # Simplify the title per your request
+        item_type_str = "New Pull Request" if is_pr else "New Issue"
+        color = discord.Color.blue() if is_pr else discord.Color.green()
+        
         embed = discord.Embed(
-            title=f"New Issue in `{repo}`", # Changed title
+            title=item_type_str,
             description=issue['title'],
             url=issue['html_url'],
-            color=discord.Color.green(),
+            color=color,
             timestamp=datetime.fromisoformat(issue['created_at'].replace('Z', '+00:00'))
         )
         
-        embed.add_field(name="Issue Number", value=f"#{issue['number']}", inline=True)
+        # Add repo name as a field so it's clear
+        embed.add_field(name="Repository", value=f"`{repo}`", inline=False)
+        
+        item_type_field_name = "PR Number" if is_pr else "Issue Number"
+        embed.add_field(name=item_type_field_name, value=f"#{issue['number']}", inline=True)
+        
         embed.add_field(name="Created By", value=f"[{issue['user']['login']}]({issue['user']['html_url']})", inline=True)
         
         issue_labels = [label['name'] for label in issue['labels']]
         
         # Only highlight labels if we are watching for specific ones
         if watched_labels:
-            embed.title = f"New Matching Issue in `{repo}`" # Revert to old title
             watched_label_set_lower = set(l.lower() for l in watched_labels)
             
             formatted_labels = []
@@ -398,7 +430,6 @@ class GitHubCog(commands.Cog):
             formatted_labels = [f"`{name}`" for name in issue_labels]
             embed.add_field(name="Labels", value=', '.join(formatted_labels), inline=False)
             
-        embed.set_footer(text=f"Repo: {repo}")
         
         try:
             await channel.send(embed=embed)
@@ -414,5 +445,6 @@ class GitHubCog(commands.Cog):
 
 
 async def setup(bot):
+    """Required setup function to load the cog."""
     await bot.add_cog(GitHubCog(bot))
 
