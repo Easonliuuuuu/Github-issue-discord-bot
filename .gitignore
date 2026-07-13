@@ -1,5 +1,6 @@
 .venv
 .env
-pycache/
+__pycache__/
 *.pyc
 bot_data.json
+.pytest_cache/

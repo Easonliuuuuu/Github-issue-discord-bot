@@ -1,14 +1,18 @@
+from __future__ import annotations
+
+from typing import Optional
+
 import discord
 from discord.ext import commands
 
 class HelpCog(commands.Cog):
     """A custom help command that looks much nicer."""
-    
-    def __init__(self, bot):
+
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @commands.command(name='help', help='Shows this help message.')
-    async def help(self, ctx, *, command_name: str = None):
+    async def help(self, ctx: commands.Context, *, command_name: Optional[str] = None):
         """Shows help for all commands, or a specific command."""
         
         prefix = self.bot.command_prefix
@@ -68,5 +72,5 @@ class HelpCog(commands.Cog):
 
 
 # This function is required by discord.py to load the cog
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(HelpCog(bot))
